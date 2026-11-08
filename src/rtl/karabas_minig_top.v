@@ -18,11 +18,13 @@
  scandoubler doubles its lines, and an output timing of 1024 x 626 at 32 MHz (720 x 576 visible,
  576p50 lines) restarts at that point, so the doubled picture sits in its window.
 
- Floppies: the F items A: and B: (sdc slots 0 and 1) through img_sdc (the file mounter of the mcu,
- the sd card interface of MiSTeryNano) to fdc1772; an image mounted read only is write protected.
+ Floppies and ACSI disks: the F items A:, B: (sdc slots 0, 1) and HDD 0, HDD 1 (slots 2, 3) through
+ img_sdc (the file mounter of the mcu, the sd card interface of MiSTeryNano) to fdc1772 and dma /
+ acsi; a floppy image mounted read only is write protected.
 
  Soft switches (the index of the item in the osd of core.json, file items included):
-   0 A: (F 0)   1 B: (F 1)   2 TOS (FL 7)   3 Chipset (ST / Mega ST / STE)   4 Reset
+   0 A: (F 0)   1 B: (F 1)   2 HDD 0 (F 2)   3 HDD 1 (F 3)   4 TOS (FL 7)
+   5 Chipset (ST / Mega ST / STE)   6 Reset
 */
 
 module karabas_minig_top (
@@ -335,15 +337,15 @@ assign SD_CLK = mcu_sck_ibufg;
 
 // ------------------------------------------------------------------ soft switches
 
-wire [5*8-1:0] sw;
-kg_soft_switches #(.N(5)) soft_switches (
+wire [7*8-1:0] sw;
+kg_soft_switches #(.N(7)) soft_switches (
 	.clk(clk_sys),
 	.command(softsw_command),
 	.regs(sw),
 	.upd()
 );
-wire [1:0] sw_chipset = sw[3*8 +: 2];   // 0 ST, 1 Mega ST (Blitter), 2 STE
-wire sw_reset = sw[4*8];
+wire [1:0] sw_chipset = sw[5*8 +: 2];   // 0 ST, 1 Mega ST (Blitter), 2 STE
+wire sw_reset = sw[6*8];
 
 // ------------------------------------------------------------------ TOS in the SRAM
 
@@ -428,6 +430,13 @@ wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, fdc_out_data;
 wire img_active;
+wire [1:0] acsi_rd, acsi_wr;
+wire [31:0] acsi_lba;
+wire [7:0] acsi_out_data;
+// img_sdc serves one slot at a time, the lowest first: each side takes busy, done and the bytes of
+// its own slots only (the floppy would take the ack of an ACSI request as its own)
+wire sdc_fdc = (sdc_slot[2:1] == 2'b00);
+wire sdc_acsi = (sdc_slot[2:1] == 2'b01);
 
 img_sdc #(.OUT_LATENCY(2)) img_sdc (
 	.clk(clk_sys),
@@ -447,9 +456,9 @@ img_sdc #(.OUT_LATENCY(2)) img_sdc (
 
 	.sdc_img_mounted(sdc_img_mounted),
 	.sdc_img_size(sdc_img_size),
-	.sdc_rd({ 6'd0, fdc_rd }),
-	.sdc_wr({ 6'd0, fdc_wr }),
-	.sdc_sector(fdc_lba),
+	.sdc_rd({ 4'd0, acsi_rd, fdc_rd }),
+	.sdc_wr({ 4'd0, acsi_wr, fdc_wr }),
+	.sdc_sector((fdc_rd != 2'd0 || fdc_wr != 2'd0) ? fdc_lba : acsi_lba),
 	.sdc_busy(sdc_busy),
 	.sdc_done(sdc_done),
 	.sdc_error(sdc_error),
@@ -457,7 +466,7 @@ img_sdc #(.OUT_LATENCY(2)) img_sdc (
 	.sdc_byte_in_strobe(sdc_byte_in_strobe),
 	.sdc_byte_addr(sdc_byte_addr),
 	.sdc_byte_in_data(sdc_byte_in_data),
-	.sdc_byte_out_data(fdc_out_data),
+	.sdc_byte_out_data(sdc_acsi ? acsi_out_data : fdc_out_data),
 
 	.active(img_active)
 );
@@ -505,24 +514,24 @@ atarist st (
 	.sd_lba(fdc_lba),
 	.sd_rd(fdc_rd),
 	.sd_wr(fdc_wr),
-	.sd_ack(sdc_busy),
+	.sd_ack(sdc_busy && sdc_fdc),
 	.sd_buff_addr(sdc_byte_addr),
 	.sd_dout(sdc_byte_in_data),
 	.sd_din(fdc_out_data),
-	.sd_dout_strobe(sdc_byte_in_strobe),
-	.sd_img_mounted({ 2'b00, sdc_img_mounted[1:0] }),  // ACSI (2, 3): phase 3
+	.sd_dout_strobe(sdc_byte_in_strobe && sdc_fdc),
+	.sd_img_mounted(sdc_img_mounted[3:0]),
 	.sd_img_size(sdc_img_size),
 
-	// ACSI: phase 3
-	.acsi_rd_req(),
-	.acsi_wr_req(),
-	.acsi_sd_lba(),
-	.acsi_sd_done(1'b0),
-	.acsi_sd_busy(1'b0),
-	.acsi_sd_rd_byte_strobe(1'b0),
-	.acsi_sd_rd_byte(8'd0),
-	.acsi_sd_wr_byte(),
-	.acsi_sd_byte_addr(9'd0),
+	// ACSI (img_sdc slots 2, 3)
+	.acsi_rd_req(acsi_rd),
+	.acsi_wr_req(acsi_wr),
+	.acsi_sd_lba(acsi_lba),
+	.acsi_sd_done(sdc_done && sdc_acsi),
+	.acsi_sd_busy(sdc_busy && sdc_acsi),
+	.acsi_sd_rd_byte_strobe(sdc_byte_in_strobe && sdc_acsi),
+	.acsi_sd_rd_byte(sdc_byte_in_data),
+	.acsi_sd_wr_byte(acsi_out_data),
+	.acsi_sd_byte_addr(sdc_byte_addr),
 
 	.rtc(12'd0),
 
