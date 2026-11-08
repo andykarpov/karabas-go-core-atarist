@@ -11,7 +11,7 @@ module MCU_BIROM
 `ifdef VERILATOR
       $readmemh ("../src/ikbd/rom/ikbd.hex", rom, 0);
 `else
-      $readmemh ("ikbd.hex", rom, 0);
+      $readmemh ("rtl/ikbd/rom/ikbd.hex", rom, 0); // karabas: path from src/, where XST runs
 `endif
    end
    

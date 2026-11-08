@@ -70,7 +70,8 @@ module dma (
  	input 			  sd_done,           // SD is done (data has been read or written)
 	input 			  sd_rd_byte_strobe, // SD has read a byte to be stored in ACSI buffer
 	input [7:0] 	  sd_rd_byte,        // data byte received from SD card
-	output reg [7:0]  sd_wr_byte,        // data byte to be sent to SD card
+	output [7:0]      sd_wr_byte,        // karabas: a block RAM output (was reg)
+//	output reg [7:0]  sd_wr_byte,        // data byte to be sent to SD card
 	input [8:0] 	  sd_byte_addr,      // address of data byte within 512 bytes sector
 
 	// additional acsi control signals
@@ -161,7 +162,13 @@ end
 // speed and to be able to receive it via DMA at
 // a reduced speed. This buffer is currently only used
 // for ACSI. Floppy has it's own buffer
-reg [7:0] buffer [512];
+// karabas: the buffer was a reg array written from two places and read from three, which XST
+// built from LUTs (9000 of them). Now one write port (the SD bytes or, a clock later, the bytes
+// of the DMA fifo) and three block RAM copies, one per reader, each read with its enable as
+// before: the upper and lower byte of acsi_read_data and sd_wr_byte keep their timing.
+reg       buf_wr_pend;
+reg [8:0] buf_wr_addr;
+reg [7:0] buf_wr_data;
 
 // number of blocks requested by ACSI
 wire [15:0] acsi_length;
@@ -184,14 +191,26 @@ always @(posedge clk) begin
     if(img_mounted[1]) acsi_image_size[1] <= img_size;
 end
 
-always @(posedge clk) begin
-   // waiting for SD card to deliver the sector
-   if(acsi_io_state == READ_WAIT4SD && sd_rd_byte_strobe)
-      buffer[sd_byte_addr] <= sd_rd_byte;
+// karabas: the buffer ports (see buf_wr_pend); the state constants are declared below
+wire       buf_sd_we = (acsi_io_state == 3'd1) && sd_rd_byte_strobe;   // READ_WAIT4SD
+wire       buf_we    = buf_sd_we || buf_wr_pend;
+wire [8:0] buf_waddr = buf_sd_we ? sd_byte_addr : buf_wr_addr;
+wire [7:0] buf_wdata = buf_sd_we ? sd_rd_byte : buf_wr_data;
+wire [15:0] acsi_read_data;
 
-   if(acsi_io_state == WRITE_WAIT4SD)
-	  sd_wr_byte <= buffer[sd_byte_addr];   	  
-end
+kg_sdpram #(.DW(8), .AW(9)) buffer_sd (
+   .clka(clk), .wea(buf_we), .addra(buf_waddr), .dina(buf_wdata),
+   .clkb(clk), .enb(acsi_io_state == 3'd7), .addrb(sd_byte_addr), .doutb(sd_wr_byte));  // WRITE_WAIT4SD
+
+kg_sdpram #(.DW(8), .AW(9)) buffer_hi (
+   .clka(clk), .wea(buf_we), .addra(buf_waddr), .dina(buf_wdata),
+   .clkb(clk), .enb(acsi_io_state == 3'd2 && !acsi_io_counter[0]), .addrb(acsi_io_counter),  // READING
+   .doutb(acsi_read_data[15:8]));
+
+kg_sdpram #(.DW(8), .AW(9)) buffer_lo (
+   .clka(clk), .wea(buf_we), .addra(buf_waddr), .dina(buf_wdata),
+   .clkb(clk), .enb(acsi_io_state == 3'd2 && acsi_io_counter[0]), .addrb(acsi_io_counter),   // READING
+   .doutb(acsi_read_data[7:0]));
    
 // select signal for the acsi controller access (write only, status comes from io controller)
 wire acsi_reg_sel = cpu_sel && !cpu_a1 && (dma_mode[4:3] == 2'b01);
@@ -199,7 +218,7 @@ wire [7:0] acsi_dout;
 
 // state machine to copy from sector buffer into fifo
 reg [8:0] acsi_io_counter;
-reg [15:0] acsi_read_data;   
+// karabas: acsi_read_data is the output of buffer_hi / buffer_lo
 reg acsi_read_strobe;   
 reg acsi_write_strobe;   
 reg acsi_dma_done;   
@@ -237,11 +256,13 @@ always @(posedge clk) begin
       acsi_dma_done <= 1'b0;   
       acsi_request_next <= 1'b0;
 	  acsi_wr_req <= 2'b00;	  
+      buf_wr_pend <= 1'b0;  // karabas
    end else begin
       acsi_read_strobe <= 1'b0;
       acsi_write_strobe <= 1'b0;
       acsi_dma_done <= 1'b0;   
       acsi_request_next <= 1'b0;	     
+      buf_wr_pend <= 1'b0;  // karabas
       
       case(acsi_io_state)
         IDLE: begin
@@ -260,7 +281,10 @@ always @(posedge clk) begin
 			   if((!acsi_io_counter[3:0] && fifo_fill == 8) || 
 				  ( acsi_io_counter[3:0] && fifo_fill)) begin
 				 
-				  buffer[acsi_io_counter] <= fifo_data_out[15:8];			   
+				  // karabas: written a clock later through the buffer port
+				  buf_wr_pend <= 1'b1;
+				  buf_wr_addr <= acsi_io_counter;
+				  buf_wr_data <= fifo_data_out[15:8];
 				  acsi_io_counter <= acsi_io_counter + 9'd1;
 
 				  // write strobe causes the fifo read pointer to increase.
@@ -273,7 +297,9 @@ always @(posedge clk) begin
 			   // give fifo one extra cycle after the strobe to deliver data
 			   if(!acsi_write_strobe) begin
 			   
-				  buffer[acsi_io_counter] <= fifo_data_out[7:0];
+				  buf_wr_pend <= 1'b1;  // karabas
+				  buf_wr_addr <= acsi_io_counter;
+				  buf_wr_data <= fifo_data_out[7:0];
 				  acsi_io_counter <= acsi_io_counter + 9'd1;
 			   
 				  if(acsi_io_counter == 9'd511) begin
@@ -322,11 +348,11 @@ always @(posedge clk) begin
             if(!acsi_io_counter[0]) begin
                 // read upper byte from sector buffer. Two bytes
                 // are needed since the fifo is 16 bit
-                acsi_read_data[15:8] <= buffer[acsi_io_counter];
+                // karabas: buffer_hi reads it (enable in this state)
                 acsi_io_counter <= acsi_io_counter + 9'd1;
             end else begin
                 // read lower byte
-                acsi_read_data[7:0] <= buffer[acsi_io_counter];
+                // karabas: buffer_lo reads it (enable in this state)
 
                 // trigger strobe and continue  if fifo is not full
                 if(!fifo_is_full) begin

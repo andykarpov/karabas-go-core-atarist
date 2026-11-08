@@ -70,7 +70,7 @@ localparam IMG_BETA        = 4; // Beta Disk Interface (with TR-DOS)
 localparam IMG_PLUSD_IMG   = 5; // PlusD, non-track interleaved
 
 localparam W    = FD_NUM - 1;
-localparam WIDX = $clog2(FD_NUM);
+localparam WIDX = (FD_NUM > 2) ? 2 : 1; // karabas: XST has no $clog2 in a localparam (FD_NUM 2..4)
 
 // -------------------------------------------------------------------------
 // --------------------- IO controller image handling ----------------------

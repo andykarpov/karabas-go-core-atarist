@@ -903,13 +903,15 @@ always @(*) begin
    end
 end
    
+// karabas: the registers of this block moved out of it: sv2v made the initial value of
+// old_flg a blocking assignment in every clock, which XST rejects
+reg rtc_old_flg = 1'b0;
+reg [31:0] rtc_cnt;
 always @(posedge clk_32) begin
-   reg old_flg = 1'b0;
-   reg [31:0] cnt;
 
    // check if new value is being provided externally
-   old_flg <= rtc[11];
-   if(old_flg ^ rtc[11]) begin
+   rtc_old_flg <= rtc[11];
+   if(rtc_old_flg ^ rtc[11]) begin
 	  rtc_present <= 1'b1;	  
       if(rtc[10:8] == 3'd0) { rtc_reg_B, rtc_reg_A } <= bcd;  // years
       if(rtc[10:8] == 3'd1) { rtc_reg_9, rtc_reg_8 } <= bcd;  // months
@@ -921,9 +923,9 @@ always @(posedge clk_32) begin
       // weekday is encoded in 3 msb of day
       if(rtc[10:8] == 3'd2) rtc_reg_C <= { 1'b0, rtc[7:5] };  // weekday
    end
-   else if(cnt < 32'd32_000_000) cnt <= cnt + 32'd1;
+   else if(rtc_cnt < 32'd32_000_000) rtc_cnt <= rtc_cnt + 32'd1;
    else begin
-      cnt <= 32'd0;
+      rtc_cnt <= 32'd0;
 	  
       // the following chain increases the bcd encoded time and
       // date registers by one second
