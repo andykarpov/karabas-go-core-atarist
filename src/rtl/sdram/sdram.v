@@ -101,12 +101,20 @@ assign sd_cas = sd_cmd[1];
 assign sd_we  = sd_cmd[0];
 
 // sd_data[31:16] and sd_dqlm[2:3] are unused with MiSTer SDRAM
-assign sd_data[15:0] = (cs && we) ? din : 16'bzzzz_zzzz_zzzz_zzzz;
-assign sd_dqm = (!cs || !we)?2'b00:ds;  // karabas: 2 bits
+// karabas: the write data, DQM and the output enable are registers set with the WRITE command, so
+// they have the half clock to the SDRAM edge that the commands have (they came from the ST bus
+// through logic: 21 ns to the pads, and the SDRAM takes them 15.6 ns after the clock edge)
+reg [15:0] dq_out;
+reg dq_oe = 1'b0;
+reg [1:0] dqm_r = 2'b00;
+assign sd_data[15:0] = dq_oe ? dq_out : 16'bzzzz_zzzz_zzzz_zzzz;
+assign sd_dqm = dqm_r;
 
 always @(posedge clk) begin
    reg csD;   
    sd_cmd <= CMD_INHIBIT;  // default: idle
+   dq_oe <= 1'b0;          // karabas: the data of a WRITE for its clock only
+   dqm_r <= 2'b00;
 
    // init state machines runs once reset ends
    if(!reset_n) begin
@@ -164,13 +172,23 @@ always @(posedge clk) begin
         // -------------------  cpu/chipset read/write ----------------------
 
         // CAS phase 
+        // karabas: a WRITE goes a clock later (state 2), with the data and DQM in registers: the ST
+        // bus has its write data ready only after the edge of state 1 (sdram.v drove them
+        // combinationally, the SDRAM took them half a clock later)
         if(state == STATE_CMD_CONT) begin
-            sd_cmd <= we?CMD_WRITE:CMD_READ;
+            sd_cmd <= we?CMD_NOP:CMD_READ;
             sd_addr <= { 4'b0010, addr[8:0] };
         end
 
         if(state > STATE_CMD_CONT && state < STATE_READ)
             sd_cmd <= CMD_NOP;
+
+        if(state == STATE_CMD_CONT + 3'd1 && we) begin
+            sd_cmd <= CMD_WRITE;
+            dq_out <= din;
+            dq_oe <= 1'b1;
+            dqm_r <= ds;
+        end
       
         // read phase
         if(state == STATE_READ && !we) begin

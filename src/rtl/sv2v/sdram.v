@@ -70,11 +70,16 @@ module sdram (
 	assign sd_ras = sd_cmd[2];
 	assign sd_cas = sd_cmd[1];
 	assign sd_we = sd_cmd[0];
-	assign sd_data[15:0] = (cs && we ? din : 16'bzzzzzzzzzzzzzzzz);
-	assign sd_dqm = (!cs || !we ? 2'b00 : ds);
+	reg [15:0] dq_out;
+	reg dq_oe = 1'b0;
+	reg [1:0] dqm_r = 2'b00;
+	assign sd_data[15:0] = (dq_oe ? dq_out : 16'bzzzzzzzzzzzzzzzz);
+	assign sd_dqm = dqm_r;
 	always @(posedge clk) begin : sv2v_autoblock_1
 		reg csD;
 		sd_cmd <= CMD_INHIBIT;
+		dq_oe <= 1'b0;
+		dqm_r <= 2'b00;
 		if (!reset_n) begin
 			init_state <= 5'h1f;
 			state <= STATE_IDLE;
@@ -117,11 +122,17 @@ module sdram (
 			else begin
 				state <= state + 3'd1;
 				if (state == STATE_CMD_CONT) begin
-					sd_cmd <= (we ? CMD_WRITE : CMD_READ);
+					sd_cmd <= (we ? CMD_NOP : CMD_READ);
 					sd_addr <= {4'b0010, addr[8:0]};
 				end
 				if ((state > STATE_CMD_CONT) && (state < STATE_READ))
 					sd_cmd <= CMD_NOP;
+				if ((state == (STATE_CMD_CONT + 3'd1)) && we) begin
+					sd_cmd <= CMD_WRITE;
+					dq_out <= din;
+					dq_oe <= 1'b1;
+					dqm_r <= ds;
+				end
 				if ((state == STATE_READ) && !we)
 					dout <= sd_data[15:0];
 			end
