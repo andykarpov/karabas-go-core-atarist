@@ -1,6 +1,7 @@
 #!/bin/bash
 # Converts the upstream RTL (SystemVerilog and the SV-flavoured .v files of MiSTeryNano) to
-# Verilog-2001 for XST with sv2v (/opt/sv2v/sv2v): one file per module in rtl/sv2v/.
+# Verilog-2001 for XST with sv2v (/opt/sv2v/sv2v): one file per module in rtl/sv2v/. The tops: atarist
+# (the machine) and the parts the board tops use (scandoubler, video_analyzer, keymap, sdram).
 # rtl/sv2v/ is generated and in git; change the sources (with a "karabas:" comment), then run this.
 set -e
 cd "$(dirname "$0")/../rtl"
@@ -18,7 +19,10 @@ SRC="atarist/acia.v atarist/acsi.v atarist/dma.v atarist/io_fifo.v atarist/mfp.v
  ikbd/ikbd.sv ikbd/rom/MCU_BIROM.v
  jt49/filter/jt49_dcrm.v jt49/filter/jt49_dcrm2.v jt49/filter/jt49_dly.v jt49/filter/jt49_mave.v
  jt49/jt49.v jt49/jt49_bus.v jt49/jt49_cen.v jt49/jt49_div.v jt49/jt49_eg.v jt49/jt49_exp.v
- jt49/jt49_noise.v"
+ jt49/jt49_noise.v
+ misc/scandoubler.v misc/video_analyzer.v misc/atarist_keymap.v sdram/sdram.v"
 rm -rf sv2v && mkdir sv2v
-$SV2V -I ikbd/hd63701 --top=atarist $SRC -w sv2v 2>&1 | grep -v -E '^\s*$|Warning: Number literal|^ *[0-9]* \||^\s*\|' || true
+$SV2V -I ikbd/hd63701 --top=atarist --top=scandoubler --top=video_analyzer --top=keymap --top=sdram $SRC -w sv2v 2>&1 | grep -v -E '^\s*$|Warning: Number literal|^ *[0-9]* \||^\s*\|' || true
 ls sv2v | wc -l
+# atarist.prj: the machine alone (make atarist-xst) and the source list of the simulations
+{ echo 'verilog work "../modules/rtl/mem/kg_sdpram.v"'; for f in sv2v/*.v; do echo "verilog work \"rtl/$f\""; done; } > ../atarist.prj

@@ -166,7 +166,7 @@ module atarist (
 	end
 	reg [31:0] clk_cnt_mfp;
 	reg clk_mfp_en;
-	localparam SYSTEM_CLOCK = 32'd32084988;
+	localparam SYSTEM_CLOCK = 32'd32000000;
 	localparam MFP_CLOCK = 32'd2457600;
 	always @(posedge clk_32)
 		if (!porb) begin

@@ -1,17 +1,20 @@
 {
     "id": "atarist",
     "name": "Atari ST",
-    "build": "26110800",
+    "build": "26110802",
     "visible": true,
     "type": "osd",
     "order": 17,
     "eeprom_bank": 255,
-    "roms": [],
+    "roms": [
+    {"filename": "roms/etos192uk.img", "address": 1048576}
+    ],
     "boards": {
         "minig": {"bitstream": "karabas_minig.bin"}
     },
     "osd": [
-    {"type": "FL", "name": "TOS", "slot": 7, "extensions": ".img,.rom", "dir": "/atarist", "filename": "tos.img", "autoload": 1},
+    {"type": "FL", "name": "TOS", "slot": 7, "extensions": ".img,.rom", "dir": "/atarist", "filename": "tos.img", "autoload": 1, "hotkey": "Menu+T"},
+    {"type": "S", "name": "Chipset", "options": ["ST", "Mega ST", "STE"], "default": 0, "hotkey": "Menu+C"},
     {"type": "T", "name": "Reset", "hotkey": "F12"}
     ]
 }

@@ -137,7 +137,7 @@ end
 reg [31:0]  clk_cnt_mfp;
 reg 	    clk_mfp_en;
 
-localparam SYSTEM_CLOCK = 32'd32_084_988;
+localparam SYSTEM_CLOCK = 32'd32_000_000;  // karabas: clk_32 is 32.000 MHz (PLL 50 * 16 / 25), was 32_084_988
 localparam MFP_CLOCK    =  32'd2_457_600;
 
 always @(posedge clk_32) begin
