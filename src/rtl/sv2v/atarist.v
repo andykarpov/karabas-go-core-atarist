@@ -106,7 +106,7 @@ module atarist (
 	input [7:0] acsi_sd_rd_byte;
 	output wire [7:0] acsi_sd_wr_byte;
 	input [8:0] acsi_sd_byte_addr;
-	input [11:0] rtc;
+	input [51:0] rtc;
 	output wire [31:0] serial_status;
 	output wire [7:0] serial_tx_available;
 	input serial_tx_strobe;
@@ -665,22 +665,22 @@ module atarist (
 		.dout({ste_joy_in[15:12], ste_joy_in[7:4]}),
 		.buttons(ste_buttons[3:2])
 	);
-	reg rtc_present = 1'b0;
+	wire rtc_present = |rtc[39:32];
 	reg rtc_bank;
 	reg [3:0] rtc_bank1 [0:15];
-	reg [3:0] rtc_reg_0;
-	reg [3:0] rtc_reg_1;
-	reg [3:0] rtc_reg_2;
-	reg [3:0] rtc_reg_3;
-	reg [3:0] rtc_reg_4;
-	reg [3:0] rtc_reg_5;
-	reg [3:0] rtc_reg_6;
-	reg [3:0] rtc_reg_7;
-	reg [3:0] rtc_reg_8;
-	reg [3:0] rtc_reg_9;
-	reg [3:0] rtc_reg_A;
-	reg [3:0] rtc_reg_B;
-	reg [3:0] rtc_reg_C;
+	wire [3:0] rtc_reg_0 = rtc[3:0];
+	wire [3:0] rtc_reg_1 = rtc[7:4];
+	wire [3:0] rtc_reg_2 = rtc[11:8];
+	wire [3:0] rtc_reg_3 = rtc[15:12];
+	wire [3:0] rtc_reg_4 = rtc[19:16];
+	wire [3:0] rtc_reg_5 = rtc[23:20];
+	wire [3:0] rtc_reg_6 = rtc[27:24];
+	wire [3:0] rtc_reg_7 = rtc[31:28];
+	wire [3:0] rtc_reg_8 = rtc[35:32];
+	wire [3:0] rtc_reg_9 = rtc[39:36];
+	wire [3:0] rtc_reg_A = rtc[43:40];
+	wire [3:0] rtc_reg_B = rtc[47:44];
+	wire [3:0] rtc_reg_C = rtc[51:48];
 	always @(*) begin
 		casez ({rtc_bank, mbus_a[4:1]})
 			5'b00000: rtc_data_out = rtc_reg_0;
@@ -704,74 +704,6 @@ module atarist (
 		endcase
 		if (!rtc_present)
 			rtc_data_out = 4'hf;
-	end
-	wire [7:0] b2c_in = (rtc[10:8] == 3'd0 ? rtc[7:0] - 80 : (rtc[10:8] == 3'd1 ? rtc[7:0] + 1 : (rtc[10:8] == 3'd2 ? {3'd0, rtc[4:0]} : rtc[7:0])));
-	reg [7:0] bcd;
-	always @(*) begin : sv2v_autoblock_2
-		integer i;
-		bcd = 8'h00;
-		for (i = 7; i >= 0; i = i - 1)
-			begin
-				if (bcd[3:0] >= 5)
-					bcd[3:0] = bcd[3:0] + 4'd3;
-				bcd = {bcd[6:0], b2c_in[i]};
-			end
-	end
-	reg rtc_old_flg = 1'b0;
-	reg [31:0] rtc_cnt;
-	always @(posedge clk_32) begin
-		rtc_old_flg <= rtc[11];
-		if (rtc_old_flg ^ rtc[11]) begin
-			rtc_present <= 1'b1;
-			if (rtc[10:8] == 3'd0)
-				{rtc_reg_B, rtc_reg_A} <= bcd;
-			if (rtc[10:8] == 3'd1)
-				{rtc_reg_9, rtc_reg_8} <= bcd;
-			if (rtc[10:8] == 3'd2)
-				{rtc_reg_7, rtc_reg_6} <= bcd;
-			if (rtc[10:8] == 3'd3)
-				{rtc_reg_5, rtc_reg_4} <= bcd;
-			if (rtc[10:8] == 3'd4)
-				{rtc_reg_3, rtc_reg_2} <= bcd;
-			if (rtc[10:8] == 3'd5)
-				{rtc_reg_1, rtc_reg_0} <= bcd;
-			if (rtc[10:8] == 3'd2)
-				rtc_reg_C <= {1'b0, rtc[7:5]};
-		end
-		else if (rtc_cnt < 32'd32000000)
-			rtc_cnt <= rtc_cnt + 32'd1;
-		else begin
-			rtc_cnt <= 32'd0;
-			if (rtc_reg_0 < 9)
-				rtc_reg_0 <= rtc_reg_0 + 4'd1;
-			else begin
-				rtc_reg_0 <= 4'h0;
-				if (rtc_reg_1 < 5)
-					rtc_reg_1 <= rtc_reg_1 + 4'd1;
-				else begin
-					rtc_reg_1 <= 4'h0;
-					if (rtc_reg_2 < 9)
-						rtc_reg_2 <= rtc_reg_2 + 4'd1;
-					else begin
-						rtc_reg_2 <= 4'h0;
-						if (rtc_reg_2 < 5)
-							rtc_reg_2 <= rtc_reg_2 + 4'd1;
-						else begin
-							rtc_reg_2 <= 4'h0;
-							if (rtc_reg_3 < 9)
-								rtc_reg_3 <= rtc_reg_3 + 4'd1;
-							else begin
-								rtc_reg_3 <= 4'h0;
-								if (rtc_reg_4 < 5)
-									rtc_reg_4 <= rtc_reg_4 + 4'd1;
-								else
-									rtc_reg_4 <= 4'h0;
-							end
-						end
-					end
-				end
-			end
-		end
 	end
 	always @(posedge clk_32)
 		if (peripheral_reset)

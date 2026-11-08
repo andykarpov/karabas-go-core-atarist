@@ -1,11 +1,12 @@
 {
     "id": "atarist",
     "name": "Atari ST",
-    "build": "26110805",
+    "build": "26110807",
     "visible": true,
     "type": "osd",
     "order": 17,
     "eeprom_bank": 255,
+    "rtc_mode": 3,
     "roms": [
     {"filename": "roms/etos192uk.img", "address": 1048576}
     ],
@@ -15,8 +16,11 @@
     "osd": [
     {"type": "F", "name": "Floppy A", "slot": 0, "extensions": ".st", "dir": "/atarist", "hotkey": "Menu+F1"},
     {"type": "F", "name": "Floppy B", "slot": 1, "extensions": ".st", "dir": "/atarist", "hotkey": "Menu+F2"},
+    {"type": "F", "name": "HDD 0", "slot": 2, "extensions": ".hd,.img", "dir": "/atarist", "hotkey": "Menu+F3"},
+    {"type": "F", "name": "HDD 1", "slot": 3, "extensions": ".hd,.img", "dir": "/atarist", "hotkey": "Menu+F4"},
     {"type": "FL", "name": "TOS", "slot": 7, "extensions": ".img,.rom", "dir": "/atarist", "filename": "tos.img", "autoload": 1, "hotkey": "Menu+T"},
     {"type": "S", "name": "Chipset", "options": ["ST", "Mega ST", "STE"], "default": 0, "hotkey": "Menu+C"},
+    {"type": "S", "name": "Monitor", "options": ["Color", "Mono"], "default": 0, "hotkey": "Menu+M"},
     {"type": "T", "name": "Reset", "hotkey": "F12"}
     ]
 }

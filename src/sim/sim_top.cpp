@@ -1,7 +1,7 @@
 // sim_top.cpp - verilator harness of sim_top.v: the Atari ST machine with sdram.v, st_sram, st_hid
 // and the video chain of the board tops (memory models in sim_top.v).
 //
-//   sim_top [--tos FILE] [--file] [--ste|--megast] [--ms N] [--ppm PREFIX] [--every N]
+//   sim_top [--tos FILE] [--file] [--ste|--megast] [--mono] [--ms N] [--ppm PREFIX] [--every N]
 //           [--key MS:CODE[:MOD]] [--expect-var NAME=HEX ...] [--expect-frames N] [--expect-mode N]
 //           [--expect-ikbd HEX] (a byte the IKBD sent to the keyboard ACIA) [--disk FILE]
 //
@@ -181,6 +181,7 @@ struct Key { double ms; int code, mod; };
 int main(int argc, char **argv) {
 	const char *tos = "roms/etos192uk.img", *disk_file = nullptr;
 	double run_ms = 100;
+	bool mono = false;
 	int file = 0, chipset = 0, expect_frames = -1, expect_mode = -1, expect_ikbd = -1;
 	std::vector<std::pair<std::string, uint32_t>> expects;
 	std::vector<Key> keys;
@@ -192,6 +193,7 @@ int main(int argc, char **argv) {
 		else if (a == "--disk" && i + 1 < argc) disk_file = argv[++i];
 		else if (a == "--ste") chipset = 2;
 		else if (a == "--megast") chipset = 1;
+		else if (a == "--mono") mono = true;
 		else if (a == "--ms" && i + 1 < argc) run_ms = atof(argv[++i]);
 		else if (a == "--ppm" && i + 1 < argc) ppm_prefix = argv[++i];
 		else if (a == "--every" && i + 1 < argc) ppm_every = atoi(argv[++i]);
@@ -221,6 +223,7 @@ int main(int argc, char **argv) {
 	Verilated::commandArgs(argc, argv);
 	tb = new Vsim_top;
 	tb->chipset = chipset;
+	tb->mono_detect = !mono;
 	tb->tos_file = file;
 	tb->kb_status = 0; tb->kb_dat0 = 0;
 	tb->porb_ext = 0; tb->resb = 0; tb->ld_we = 0;

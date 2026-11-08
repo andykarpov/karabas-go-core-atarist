@@ -18,11 +18,13 @@
  scandoubler doubles its lines, and an output timing of 1024 x 626 at 32 MHz (720 x 576 visible,
  576p50 lines) restarts at that point, so the doubled picture sits in its window.
 
- Floppies: the F items A: and B: (sdc slots 0 and 1) through img_sdc (the file mounter of the mcu,
- the sd card interface of MiSTeryNano) to fdc1772; an image mounted read only is write protected.
+ Floppies and ACSI disks: the F items A:, B: (sdc slots 0, 1) and HDD 0, HDD 1 (slots 2, 3) through
+ img_sdc (the file mounter of the mcu, the sd card interface of MiSTeryNano) to fdc1772 and dma /
+ acsi; a floppy image mounted read only is write protected.
 
  Soft switches (the index of the item in the osd of core.json, file items included):
-   0 A: (F 0)   1 B: (F 1)   2 TOS (FL 7)   3 Chipset (ST / Mega ST / STE)   4 Reset
+   0 A: (F 0)   1 B: (F 1)   2 HDD 0 (F 2)   3 HDD 1 (F 3)   4 TOS (FL 7)
+   5 Chipset (ST / Mega ST / STE)   6 Reset
 */
 
 module karabas_minig_top (
@@ -212,13 +214,13 @@ wire img_data_wr, img_result_wr, img_q_wr, img_q_ack;
 wire [8:0] img_data_addr;
 wire [15:0] img_sum;
 wire [23:0] img_q_di;
-wire [7:0] rtc_a, rtc_di, rtc_do;
-wire rtc_cs, rtc_wr_n;
+wire [7:0] rtc_a, rtc_do;
+wire [51:0] st_rtc_digits;
 
 kg_mcu #(
 	.BURST_MAX_MHZ(32),  // Rev.G has MCU_SCK on a global clock pin
 	.CS_FILTER(3),
-	.ENABLE_RTC(0),
+	.ENABLE_RTC(1),       // the clock: rtc_mode 3, see st_rtc
 	.ENABLE_UART(0),
 	.ENABLE_MATRIX(0),
 	.ENABLE_DEBUG(0),
@@ -291,10 +293,10 @@ kg_mcu #(
 	.PS2_COMMAND(16'h0000),
 	.PS2_COMMAND_WR(1'b0),
 	.RTC_A(rtc_a),
-	.RTC_DI(rtc_di),
+	.RTC_DI(8'd0),
 	.RTC_DO(rtc_do),
-	.RTC_CS(rtc_cs),
-	.RTC_WR_N(rtc_wr_n),
+	.RTC_CS(1'b0),
+	.RTC_WR_N(1'b1),
 	.UART_RX_DATA(uart_rx_data),
 	.UART_RX_IDX(uart_rx_idx),
 	.UART_TX_DATA(uart_tx_data),
@@ -335,15 +337,16 @@ assign SD_CLK = mcu_sck_ibufg;
 
 // ------------------------------------------------------------------ soft switches
 
-wire [5*8-1:0] sw;
-kg_soft_switches #(.N(5)) soft_switches (
+wire [8*8-1:0] sw;
+kg_soft_switches #(.N(8)) soft_switches (
 	.clk(clk_sys),
 	.command(softsw_command),
 	.regs(sw),
 	.upd()
 );
-wire [1:0] sw_chipset = sw[3*8 +: 2];   // 0 ST, 1 Mega ST (Blitter), 2 STE
-wire sw_reset = sw[4*8];
+wire [1:0] sw_chipset = sw[5*8 +: 2];   // 0 ST, 1 Mega ST (Blitter), 2 STE
+wire sw_mono = sw[6*8];                 // the monitor: 0 colour, 1 monochrome
+wire sw_reset = sw[7*8];
 
 // ------------------------------------------------------------------ TOS in the SRAM
 
@@ -384,12 +387,13 @@ always @(posedge clk_sys)
 wire sdr_reset_n = sdr_wait == 13'h1FFF;
 wire ram_ready;
 
-// a change of the chipset is a power-on reset (TOS sizes the machine at a cold start)
-reg [1:0] chipset_d = 2'd0;
+// a change of the chipset or the monitor is a power-on reset (TOS sizes the machine and reads
+// the monitor type at a cold start)
+reg [2:0] chipset_d = 3'd0;
 reg [7:0] chip_rst = 8'hFF;
 always @(posedge clk_sys) begin
-	chipset_d <= sw_chipset;
-	if (sw_chipset != chipset_d || areset)
+	chipset_d <= { sw_mono, sw_chipset };
+	if ({ sw_mono, sw_chipset } != chipset_d || areset)
 		chip_rst <= 8'hFF;
 	else if (chip_rst != 8'd0)
 		chip_rst <= chip_rst - 8'd1;
@@ -428,6 +432,13 @@ wire [2:0] sdc_slot;
 wire [8:0] sdc_byte_addr;
 wire [7:0] sdc_byte_in_data, fdc_out_data;
 wire img_active;
+wire [1:0] acsi_rd, acsi_wr;
+wire [31:0] acsi_lba;
+wire [7:0] acsi_out_data;
+// img_sdc serves one slot at a time, the lowest first: each side takes busy, done and the bytes of
+// its own slots only (the floppy would take the ack of an ACSI request as its own)
+wire sdc_fdc = (sdc_slot[2:1] == 2'b00);
+wire sdc_acsi = (sdc_slot[2:1] == 2'b01);
 
 img_sdc #(.OUT_LATENCY(2)) img_sdc (
 	.clk(clk_sys),
@@ -447,9 +458,9 @@ img_sdc #(.OUT_LATENCY(2)) img_sdc (
 
 	.sdc_img_mounted(sdc_img_mounted),
 	.sdc_img_size(sdc_img_size),
-	.sdc_rd({ 6'd0, fdc_rd }),
-	.sdc_wr({ 6'd0, fdc_wr }),
-	.sdc_sector(fdc_lba),
+	.sdc_rd({ 4'd0, acsi_rd, fdc_rd }),
+	.sdc_wr({ 4'd0, acsi_wr, fdc_wr }),
+	.sdc_sector((fdc_rd != 2'd0 || fdc_wr != 2'd0) ? fdc_lba : acsi_lba),
 	.sdc_busy(sdc_busy),
 	.sdc_done(sdc_done),
 	.sdc_error(sdc_error),
@@ -457,7 +468,7 @@ img_sdc #(.OUT_LATENCY(2)) img_sdc (
 	.sdc_byte_in_strobe(sdc_byte_in_strobe),
 	.sdc_byte_addr(sdc_byte_addr),
 	.sdc_byte_in_data(sdc_byte_in_data),
-	.sdc_byte_out_data(fdc_out_data),
+	.sdc_byte_out_data(sdc_acsi ? acsi_out_data : fdc_out_data),
 
 	.active(img_active)
 );
@@ -484,7 +495,7 @@ atarist st (
 	.porb(porb),
 	.resb(resb),
 
-	.mono_detect(1'b1),  // colour monitor
+	.mono_detect(!sw_mono),
 	.r(st_r),
 	.g(st_g),
 	.b(st_b),
@@ -505,26 +516,26 @@ atarist st (
 	.sd_lba(fdc_lba),
 	.sd_rd(fdc_rd),
 	.sd_wr(fdc_wr),
-	.sd_ack(sdc_busy),
+	.sd_ack(sdc_busy && sdc_fdc),
 	.sd_buff_addr(sdc_byte_addr),
 	.sd_dout(sdc_byte_in_data),
 	.sd_din(fdc_out_data),
-	.sd_dout_strobe(sdc_byte_in_strobe),
-	.sd_img_mounted({ 2'b00, sdc_img_mounted[1:0] }),  // ACSI (2, 3): phase 3
+	.sd_dout_strobe(sdc_byte_in_strobe && sdc_fdc),
+	.sd_img_mounted(sdc_img_mounted[3:0]),
 	.sd_img_size(sdc_img_size),
 
-	// ACSI: phase 3
-	.acsi_rd_req(),
-	.acsi_wr_req(),
-	.acsi_sd_lba(),
-	.acsi_sd_done(1'b0),
-	.acsi_sd_busy(1'b0),
-	.acsi_sd_rd_byte_strobe(1'b0),
-	.acsi_sd_rd_byte(8'd0),
-	.acsi_sd_wr_byte(),
-	.acsi_sd_byte_addr(9'd0),
+	// ACSI (img_sdc slots 2, 3)
+	.acsi_rd_req(acsi_rd),
+	.acsi_wr_req(acsi_wr),
+	.acsi_sd_lba(acsi_lba),
+	.acsi_sd_done(sdc_done && sdc_acsi),
+	.acsi_sd_busy(sdc_busy && sdc_acsi),
+	.acsi_sd_rd_byte_strobe(sdc_byte_in_strobe && sdc_acsi),
+	.acsi_sd_rd_byte(sdc_byte_in_data),
+	.acsi_sd_wr_byte(acsi_out_data),
+	.acsi_sd_byte_addr(sdc_byte_addr),
 
-	.rtc(12'd0),
+	.rtc(st_rtc_digits),
 
 	.serial_status(),
 	.serial_tx_available(),
@@ -565,6 +576,14 @@ atarist st (
 	.rom_data_out(st_rom_data),
 
 	.leds()
+);
+
+// the clock of the ST from the registers of the mcu
+st_rtc st_rtc (
+	.clk(clk_sys),
+	.rtc_a(rtc_a),
+	.rtc_do(rtc_do),
+	.digits(st_rtc_digits)
 );
 
 st_hid hid (
