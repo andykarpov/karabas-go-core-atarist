@@ -228,12 +228,13 @@ video_analyzer analyzer (
 );
 wire [5:0] sd_r, sd_g, sd_b;
 scandoubler #(10) doubler (
-	.clk_sys(clk), .bypass(vmode == 2'd2), .ce_divider(1'b1), .pixel_ena(), .scanlines(2'b00),
+	.clk_sys(clk), .bypass(1'b0), .ce_divider(1'b1), .pixel_ena(), .scanlines(2'b00),
 	.hs_in(st_hs_n), .vs_in(st_vs_n), .r_in(st_r), .g_in(st_g), .b_in(st_b),
 	.hs_out(), .vs_out(), .r_out(sd_r), .g_out(sd_g), .b_out(sd_b)
 );
 st_video_out vout (
 	.clk(clk), .vmode(vmode), .vreset(vreset), .r(sd_r), .g(sd_g), .b(sd_b),
+	.st_de(st_de), .st_vs_n(st_vs_n), .st_pix(st_g[3]),
 	.rgb(vid_rgb), .hs(vid_hs), .vs(vid_vs), .de(vid_de)
 );
 

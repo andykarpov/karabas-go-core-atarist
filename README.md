@@ -24,10 +24,11 @@ Status: checked on Mini G. The Go and Mini builds have not been run on a board y
 - **Hard disks:** two ACSI drives, `.hd` or `.img` images, read and write.
 - **Clock:** the Mega ST clock, kept by the clock of the board.
 - **Input:** USB keyboard and mouse, two joysticks.
-- **Video:** 50 Hz and 60 Hz colour through a line doubler; 640 x 400 at 71 Hz with Monitor = Mono (not every monitor accepts this mode).
+- **Video:** 50 Hz and 60 Hz colour through a line doubler; 640 x 400 monochrome with Monitor = Mono, shown from a frame buffer in the same 576p 50 Hz output as the colour modes.
+- **MIDI:** MIDI IN from a USB MIDI keyboard (through the firmware), MIDI OUT to the SAM2695 synth of the board.
 - **Sound:** YM2149 and the STE DMA sound.
 
-Not supported: smaller memory sizes, MIDI, serial and parallel ports, the physical floppy drive of the Go.
+Not supported: smaller memory sizes, serial and parallel ports, the physical floppy drive of the Go.
 
 ## Getting started
 

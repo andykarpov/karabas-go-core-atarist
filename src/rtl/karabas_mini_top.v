@@ -129,7 +129,6 @@ assign WRESET_N = 1'b1;
 assign WD = 16'bz;
 
 assign TAPE_OUT = 1'b0;
-assign MIDI_TX = 1'b1;
 assign UART_RX = 1'bz;
 assign UART_TX = 1'bz;
 assign UART_CTS = 1'bz;
@@ -138,14 +137,9 @@ assign FLASH_DI = 1'b1;
 assign FLASH_SCK = 1'b0;
 assign FLASH_WP_N = 1'b1;
 assign FLASH_HOLD_N = 1'b1;
-
-assign ADC_CLK = 1'b0;
-assign ADC_BCK = 1'bz;
-assign ADC_LRCK = 1'bz;
 assign ESP_RESET_N = 1'bz;
 assign ESP_BOOT_N = 1'bz;
 assign FT_RESET = 1'b1;
-assign MIDI_CLK = 1'b1;
 assign MIDI_RESET_N = 1'b1;
 
 // ------------------------------------------------------------------ clocks
@@ -161,7 +155,8 @@ kg_pll #(
 	.CLKFBOUT_MULT(16),
 	.CLKOUT0_DIVIDE(25),
 	.CLKOUT1_DIVIDE(100),
-	.BUFG_MASK(6'b000011)
+	.CLKOUT2_DIVIDE(67),   // 11.94 MHz: MIDI_CLK of the SAM2695
+	.BUFG_MASK(6'b000111)
 ) pll (
 	.clk_in(CLK_50MHZ),
 	.rst(1'b0),
@@ -170,6 +165,7 @@ kg_pll #(
 );
 assign clk_sys = pll_clk[0];
 assign clk_8 = pll_clk[1];
+ODDR2 oddr_midi_clk (.Q(MIDI_CLK), .C0(pll_clk[2]), .C1(~pll_clk[2]), .CE(1'b1), .D0(1'b1), .D1(1'b0), .R(1'b0), .S(1'b0));
 assign areset = ~locked;
 
 kg_dcm #(
@@ -224,6 +220,8 @@ wire [15:0] img_sum;
 wire [23:0] img_q_di;
 wire [7:0] rtc_a, rtc_do;
 wire [51:0] st_rtc_digits;
+wire [7:0] midi_data;
+wire midi_wr, midi_rx_line;
 
 kg_mcu #(
 	.BURST_MAX_MHZ(0),   // MCU_SCK is not on a clock pin: bursts at the link clock
@@ -234,6 +232,7 @@ kg_mcu #(
 	.ENABLE_DEBUG(0),
 	.ENABLE_IMG(1),      // the floppies A: and B: (slots 0, 1)
 	.ENABLE_IMG_WP(1),   // read only images: write protected disks
+	.ENABLE_MIDI(1),     // MIDI IN of a USB keyboard (CMD_MIDI)
 	.ENABLE_FILE(1),
 	.FILE_CMDS(0),       // the ioctl commands of the FL items
 	.FILE_WR_EACH(1),
@@ -296,6 +295,10 @@ kg_mcu #(
 	.SD2_SCK(),
 
 	.DVI_ONLY(dvi_only),
+
+	.MIDI_DATA(midi_data),
+	.MIDI_WR(midi_wr),
+	.MIDI_LOST(),
 
 	// not used by this core (yet)
 	.PS2_COMMAND(16'h0000),
@@ -553,8 +556,8 @@ atarist st (
 	.serial_rx_strobe(1'b0),
 	.serial_rx_data(8'd0),
 
-	.midi_rx(1'b1),
-	.midi_tx(),
+	.midi_rx(midi_rx_line),
+	.midi_tx(MIDI_TX),   // to the SAM2695 of the board
 
 	.parallel_strobe_oe(),
 	.parallel_strobe_in(1'b1),
@@ -592,6 +595,15 @@ st_rtc st_rtc (
 	.rtc_a(rtc_a),
 	.rtc_do(rtc_do),
 	.digits(st_rtc_digits)
+);
+
+// MIDI IN: the bytes of a USB MIDI keyboard to the MIDI ACIA, as the 31250 baud line it expects
+kg_midi_tx #(.CLK_HZ(32000000), .AW(5)) midi_in (
+	.clk(clk_sys),
+	.data(midi_data),
+	.wr(midi_wr),
+	.overflow(),
+	.tx(midi_rx_line)
 );
 
 st_hid hid (
@@ -668,7 +680,7 @@ video_analyzer analyzer (
 wire [5:0] sd_r, sd_g, sd_b;
 scandoubler #(10) doubler (
 	.clk_sys(clk_sys),
-	.bypass(vmode == 2'd2),
+	.bypass(1'b0),
 	.ce_divider(1'b1),
 	.pixel_ena(),
 	.scanlines(2'b00),
@@ -693,6 +705,9 @@ st_video_out vout (
 	.r(sd_r),
 	.g(sd_g),
 	.b(sd_b),
+	.st_de(st_de),
+	.st_vs_n(st_vs_n),
+	.st_pix(st_g[3]),
 	.rgb(vid_rgb),
 	.hs(vid_hs),
 	.vs(vid_vs),
@@ -719,9 +734,16 @@ kg_osd_overlay #(.H_OFFSET(192), .V_OFFSET(62), .H_DIV4_WIDTH(1100)) osd (
 
 // ------------------------------------------------------------------ audio
 
-// the YM2149 and DMA sound mix of atarist: 15 bits, signed
-wire [15:0] aud_l = { audio_l[14], audio_l };
-wire [15:0] aud_r = { audio_r[14], audio_r };
+// the PCM1808 ADC: the sound of the SAM2695 synth (and of the FT812)
+wire [15:0] adc_l, adc_r;
+st_adc adc (.clk(clk_sys), .sd(ADC_DOUT), .bck(ADC_BCK), .lrck(ADC_LRCK), .l(adc_l), .r(adc_r));
+ODDR2 oddr_adc_clk (.Q(ADC_CLK), .C0(clk_8), .C1(~clk_8), .CE(1'b1), .D0(1'b1), .D1(1'b0), .R(1'b0), .S(1'b0));
+
+// the YM2149 and DMA sound mix of atarist (15 bits, signed) + the ADC, saturating
+wire [16:0] mix_l = { audio_l[14], audio_l[14], audio_l } + { adc_l[15], adc_l };
+wire [16:0] mix_r = { audio_r[14], audio_r[14], audio_r } + { adc_r[15], adc_r };
+wire [15:0] aud_l = (mix_l[16] != mix_l[15]) ? { mix_l[16], { 15{ !mix_l[16] } } } : mix_l[15:0];
+wire [15:0] aud_r = (mix_r[16] != mix_r[15]) ? { mix_r[16], { 15{ !mix_r[16] } } } : mix_r[15:0];
 
 // no I2S DAC on this board: sigma-delta outputs into an RC filter, offset binary input
 kg_sigma_delta_dac dac_l (.clk(clk_sys), .reset(areset), .din({ ~aud_l[15], aud_l[14:0] }), .dout(AUDIO_L));

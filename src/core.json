@@ -1,7 +1,7 @@
 {
     "id": "atarist",
     "name": "Atari ST",
-    "build": "26110808",
+    "build": "26110809",
     "visible": true,
     "type": "osd",
     "order": 17,
