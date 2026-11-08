@@ -21,6 +21,7 @@ module sim_top (
 	input wire [7:0] ld_data,
 	input wire tos_file,      // 1: TOS at 000000 (an FL file), 0: at 100000 (EmuTOS)
 	input wire [1:0] chipset,
+	input wire mono_detect,   // 0 = monochrome monitor
 
 	input wire [7:0] kb_status,
 	input wire [7:0] kb_dat0,
@@ -158,7 +159,7 @@ assign audio_l16 = { audio_l[14], audio_l };
 
 atarist st (
 	.clk_32(clk), .porb(porb_ext && ram_ready), .resb(resb),
-	.mono_detect(1'b1),
+	.mono_detect(mono_detect),
 	.r(st_r), .g(st_g), .b(st_b), .hsync_n(st_hs_n), .vsync_n(st_vs_n), .de(st_de), .blank_n(),
 	.keyboard_matrix_out(kbd_matrix_out), .keyboard_matrix_in(kbd_matrix_in), .joy0(joy0), .joy1(joy1),
 	.audio_mix_l(audio_l), .audio_mix_r(audio_r),
@@ -167,7 +168,7 @@ atarist st (
 	.sd_img_mounted({ 2'b00, sdc_img_mounted[1:0] }), .sd_img_size(sdc_img_size),
 	.acsi_rd_req(), .acsi_wr_req(), .acsi_sd_lba(), .acsi_sd_done(1'b0), .acsi_sd_busy(1'b0),
 	.acsi_sd_rd_byte_strobe(1'b0), .acsi_sd_rd_byte(8'd0), .acsi_sd_wr_byte(), .acsi_sd_byte_addr(9'd0),
-	.rtc(12'd0),
+	.rtc(52'd0),
 	.serial_status(), .serial_tx_available(), .serial_tx_strobe(1'b0), .serial_tx_data(),
 	.serial_rx_available(), .serial_rx_strobe(1'b0), .serial_rx_data(8'd0),
 	.midi_rx(1'b1), .midi_tx(),

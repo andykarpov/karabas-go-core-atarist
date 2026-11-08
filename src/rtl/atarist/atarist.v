@@ -53,8 +53,9 @@ module atarist (
 	output [7:0]	   acsi_sd_wr_byte,
 	input [8:0]		   acsi_sd_byte_addr,
 
-    // RTC real time data e.g. via NTP
-	input [11:0]	   rtc,
+    // RTC: 13 BCD digits S1 S10 MI1 MI10 H1 H10 D1 D10 MO1 MO10 Y1 Y10 W, digit 0 lowest
+    // karabas: the digits of the mcu clock (rtc_mode 3) instead of the MiST 12 bit message
+	input [51:0]	   rtc,
 					 
     // serial/rs232 to MCU
 	output [31:0]	   serial_status,
@@ -828,30 +829,27 @@ ste_joypad ste_joypad1 (
 /* ------------------------------- Real-time clock ------------------------------ */
 /* ------------------------------------------------------------------------------ */
 
-// a dummy time to start with ...
+// karabas: the mcu keeps the digits current, so no second counter and no BCD conversion here.
+// A month 00 means no valid time came: the RTC stays invisible, as upstream without a clock.
+wire rtc_present = |rtc[39:32];
 
-// day of week, year, month, day, hour, minute, seconds                    
-//wire [51:0] rtc = { 4'h6, 8'h23,8'h09,8'h03, 8'h13,8'h33,8'h00 };
-
-reg rtc_present = 1'b0;   
-   
 reg [3:0] rtc_data_out;
 reg       rtc_bank;
 reg [3:0] rtc_bank1[16];
 
-reg [3:0] rtc_reg_0;  // seconds ones
-reg [3:0] rtc_reg_1;  // seconds tens
-reg [3:0] rtc_reg_2;  // minutes ones
-reg [3:0] rtc_reg_3;  // minutes tens
-reg [3:0] rtc_reg_4;  // hours ones
-reg [3:0] rtc_reg_5;  // hours tens
-reg [3:0] rtc_reg_6;  // days ones
-reg [3:0] rtc_reg_7;  // days tens
-reg [3:0] rtc_reg_8;  // months ones
-reg [3:0] rtc_reg_9;  // months tens
-reg [3:0] rtc_reg_A;  // years ones
-reg [3:0] rtc_reg_B;  // years tens
-reg [3:0] rtc_reg_C;  // weekday
+wire [3:0] rtc_reg_0 = rtc[3:0];
+wire [3:0] rtc_reg_1 = rtc[7:4];
+wire [3:0] rtc_reg_2 = rtc[11:8];
+wire [3:0] rtc_reg_3 = rtc[15:12];
+wire [3:0] rtc_reg_4 = rtc[19:16];
+wire [3:0] rtc_reg_5 = rtc[23:20];
+wire [3:0] rtc_reg_6 = rtc[27:24];
+wire [3:0] rtc_reg_7 = rtc[31:28];
+wire [3:0] rtc_reg_8 = rtc[35:32];
+wire [3:0] rtc_reg_9 = rtc[39:36];
+wire [3:0] rtc_reg_A = rtc[43:40];
+wire [3:0] rtc_reg_B = rtc[47:44];
+wire [3:0] rtc_reg_C = rtc[51:48];
 
 // RP5C15
 always @(*) begin
@@ -879,107 +877,6 @@ always @(*) begin
 	if (!rtc_present) rtc_data_out = 4'hf;
 end // always @ (*)   
 
-// hours, minutes and seconds are just BCD encoded. But months and days need preprocessing
-// and the years ten digit can be > 9 which the bcd encoder already handles
-wire [7:0] b2c_in = 
-	   (rtc[10:8] == 3'd0)?(rtc[7:0]-80):     // years 1900+ to 1980+
-	   (rtc[10:8] == 3'd1)?(rtc[7:0]+1):      // months 0..11 -> 1..12
-	   (rtc[10:8] == 3'd2)?{3'd0,rtc[4:0]}:   // days excl. weekday bits
-	   rtc[7:0];                              // h/m/s
-
-reg [7:0] bcd;  // 2 BCD digits: {tens, ones}
-
-// 8 bit to 2*4 digit double dabble algorithm. The add-5 step
-// is omitted for the tens digit, allowing for the "digits" 10,11,...
-// which is needed for years > 99
-always @(*) begin
-   integer i;   
-   bcd = 8'h00;     // clear result      
-   for (i = 7; i >= 0; i = i - 1) begin
-      // "add 3" step: if any BCD digit >= 5, add 3 to it
-      if (bcd[3:0] >= 5) bcd[3:0] = bcd[3:0] + 4'd3;  // ones
-      // shift-left one bit, bringing in the next binary bit
-      bcd = {bcd[6:0], b2c_in[i]};
-   end
-end
-   
-// karabas: the registers of this block moved out of it: sv2v made the initial value of
-// old_flg a blocking assignment in every clock, which XST rejects
-reg rtc_old_flg = 1'b0;
-reg [31:0] rtc_cnt;
-always @(posedge clk_32) begin
-
-   // check if new value is being provided externally
-   rtc_old_flg <= rtc[11];
-   if(rtc_old_flg ^ rtc[11]) begin
-	  rtc_present <= 1'b1;	  
-      if(rtc[10:8] == 3'd0) { rtc_reg_B, rtc_reg_A } <= bcd;  // years
-      if(rtc[10:8] == 3'd1) { rtc_reg_9, rtc_reg_8 } <= bcd;  // months
-      if(rtc[10:8] == 3'd2) { rtc_reg_7, rtc_reg_6 } <= bcd;  // days
-      if(rtc[10:8] == 3'd3) { rtc_reg_5, rtc_reg_4 } <= bcd;  // hours
-      if(rtc[10:8] == 3'd4) { rtc_reg_3, rtc_reg_2 } <= bcd;  // minutes
-      if(rtc[10:8] == 3'd5) { rtc_reg_1, rtc_reg_0 } <= bcd;  // seconds
-
-      // weekday is encoded in 3 msb of day
-      if(rtc[10:8] == 3'd2) rtc_reg_C <= { 1'b0, rtc[7:5] };  // weekday
-   end
-   else if(rtc_cnt < 32'd32_000_000) rtc_cnt <= rtc_cnt + 32'd1;
-   else begin
-      rtc_cnt <= 32'd0;
-	  
-      // the following chain increases the bcd encoded time and
-      // date registers by one second
-      
-      // advance the ones of seconds
-      if(rtc_reg_0 < 9) 
-		rtc_reg_0 <= rtc_reg_0 + 4'd1;
-      else begin
-		 // seconds ones rollover
-		 rtc_reg_0 <= 4'h0;	 
-		 // advance the tens of seconds		   
-		 if(rtc_reg_1 < 5) 
-		   rtc_reg_1 <= rtc_reg_1 + 4'd1;
-		 else begin
-			// seconds rollover
-			rtc_reg_1 <= 4'h0;
-			// advance the ones of minutes
-			if(rtc_reg_2 < 9) 
-			  rtc_reg_2 <= rtc_reg_2 + 4'd1;
-			else begin
-			   // minutes ones rollover
-			   rtc_reg_2 <= 4'h0;	 
-			   // advance the tens of minutes
-			   if(rtc_reg_2 < 5) 
-				 rtc_reg_2 <= rtc_reg_2 + 4'd1;
-			   else begin
-				  // minutes rollover
-				  rtc_reg_2 <= 4'h0;
-				  // advance the ones of hours
-				  if(rtc_reg_3 < 9) 
-					rtc_reg_3 <= rtc_reg_3 + 4'd1;
-				  else begin
-					 // hours ones rollover
-					 rtc_reg_3 <= 4'h0;	 
-					 // advance the tens of hours
-					 if(rtc_reg_4 < 5) 
-					   rtc_reg_4 <= rtc_reg_4 + 4'd1;
-					 else begin
-						// hours rollover
-						rtc_reg_4 <= 4'h0;
-						
-						// TODO: Expand this to days, months and years ...
-						// But with NTP as the signal source this is less important
-						// as the periodic updates from NTP will update all
-						// registers.			
-					 end
-				  end
-			   end
-			end
-		 end
-      end
-   end
-end // always @ (posedge clk)
-   
 always @(posedge clk_32) begin
 	if (peripheral_reset) begin
 		rtc_bank <= 0;
