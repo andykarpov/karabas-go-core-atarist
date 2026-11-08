@@ -1,0 +1,17 @@
+{
+    "id": "atarist",
+    "name": "Atari ST",
+    "build": "26110800",
+    "visible": true,
+    "type": "osd",
+    "order": 17,
+    "eeprom_bank": 255,
+    "roms": [],
+    "boards": {
+        "minig": {"bitstream": "karabas_minig.bin"}
+    },
+    "osd": [
+    {"type": "FL", "name": "TOS", "slot": 7, "extensions": ".img,.rom", "dir": "/atarist", "filename": "tos.img", "autoload": 1},
+    {"type": "T", "name": "Reset", "hotkey": "F12"}
+    ]
+}
