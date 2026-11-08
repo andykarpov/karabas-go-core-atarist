@@ -462,6 +462,23 @@ img_sdc #(.OUT_LATENCY(2)) img_sdc (
 	.active(img_active)
 );
 
+// a change of disk: on the ST the write protect line of the drive is set while a disk goes in or
+// out, and TOS finds a new disk by that (it polls the line in its VBL routine: 8 frames per drive,
+// so 2^25 clocks = 1 s is enough for both). fdc1772 has no such pulse: without it TOS kept reading
+// the directory of the old disk from its cache.
+reg [1:0] disk_chg = 2'b00;
+reg [24:0] disk_chg_cnt = 25'd0;
+always @(posedge clk_sys) begin
+	if (|sdc_img_mounted[1:0]) begin
+		disk_chg <= disk_chg | sdc_img_mounted[1:0];
+		disk_chg_cnt <= 25'h1FFFFFF;
+	end
+	else if (disk_chg_cnt != 25'd0)
+		disk_chg_cnt <= disk_chg_cnt - 25'd1;
+	else
+		disk_chg <= 2'b00;
+end
+
 atarist st (
 	.clk_32(clk_sys),
 	.porb(porb),
@@ -531,7 +548,7 @@ atarist st (
 	.ste(sw_chipset == 2'd2),
 	.enable_extra_ram(1'b0),
 	.blitter_en(sw_chipset != 2'd0),
-	.floppy_protected(img_wp[1:0]),  // read only images
+	.floppy_protected(img_wp[1:0] | disk_chg),  // read only images; a disk being changed
 	.cubase_en(1'b0),
 
 	.ram_ras_n(ram_ras_n),
