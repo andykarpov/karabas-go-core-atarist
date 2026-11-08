@@ -9,12 +9,15 @@
 //   - read it back through the fdc;
 //   - drive B: read (lba 0 of the second image);
 //   - write to a write protected A: : the status has WP, the image is not changed.
-// The run stops in a few seconds; exit 0 when all pass.
+// About 20 s; exit 0 when all pass. --tos adds what TOS does first: restore with spin up and verify,
+// a read with spin up after the motor went off (about 100 s).
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
 #include <vector>
+#include <string>
+#include <algorithm>
 #include "Vtb_floppy.h"
 #include "verilated.h"
 
@@ -143,10 +146,11 @@ static int wait_irq(const char *what) {
 static uint8_t pattern(int d, uint32_t off) { return (uint8_t)((off * 7 + (off >> 9) * 13 + d * 101) ^ (off >> 3)); }
 
 // a type II read: the bytes taken on drq
+static int read_cmd = 0x88;    // read sector, h: no spin up
 static int read_sector(const char *what, int sector, std::vector<uint8_t> &got) {
 	got.clear();
 	wr(2, sector);
-	wr(0, 0x88);                   // read sector, h: no spin up
+	wr(0, read_cmd);
 	uint64_t t0 = ticks;
 	while (!tb->irq) {
 		if (tb->drq) got.push_back(rd(3));
@@ -213,6 +217,15 @@ int main(int argc, char **argv) {
 	for (int i = 0; i < 100; i++) tick();
 
 	select(0, 0);
+	// as TOS: restore with spin up and verify, read with spin up (the motor is off by now)
+	if (argc > 1 && std::string(argv[1]) == "--tos") {
+		int st0 = (wr(0, 0x07), wait_irq("restore V"));
+		printf("restore V: status %02x (%.1f ms)\n", st0, ticks / 32000.0);
+		for (int i = 0; i < 32000 * 3000; i++) tick();   // motor off
+		read_cmd = 0x80;
+		check_read("A: read with spin up", 0, 1, 0);
+		read_cmd = 0x88;
+	}
 	int st = (wr(0, 0x08), wait_irq("restore"));
 	printf("%s restore: status %02x\n", (st >= 0 && (st & 0x04)) ? "ok  " : "FAIL", st);
 	if (st < 0 || !(st & 0x04)) fails++;
