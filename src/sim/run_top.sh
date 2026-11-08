@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")"
 mkdir -p build
 cd ..
-SRC=$( (sed -n 's/^verilog work "\(rtl\/sv2v\/.*\)"/\1/p' atarist.prj; echo ../modules/rtl/mem/kg_sdpram.v rtl/st/st_sram.v rtl/st/st_hid.v rtl/st/st_video_out.v sim/sim_top.v) | tr '\n' ' ')
+SRC=$( (sed -n 's/^verilog work "\(rtl\/sv2v\/.*\)"/\1/p' atarist.prj; echo ../modules/rtl/mem/kg_sdpram.v ../modules/rtl/mcu/img_sdc.v rtl/st/st_sram.v rtl/st/st_hid.v rtl/st/st_video_out.v sim/sim_top.v) | tr '\n' ' ')
 BIN=sim/build/top/Vsim_top
 if [ ! -x $BIN ] || [ -n "$(find $SRC sim/sim_top.cpp sim/run_top.sh -newer $BIN 2>/dev/null)" ]; then
 	verilator -O2 -Wno-fatal -Wno-lint -Wno-style -Wno-BLKANDNBLK -Wno-MULTIDRIVEN \

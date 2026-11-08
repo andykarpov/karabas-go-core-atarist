@@ -317,7 +317,7 @@ module fdc1772 (
 	reg [10:0] fifo_cpuptr;
 	reg sd_card_read;
 	reg sd_card_write;
-	reg [2:0] sd_state;
+	reg [2:0] sd_state = 3'd0;
 	reg step_dir;
 	always @(posedge clkcpu) begin : sv2v_autoblock_3
 		reg [1:0] seek_state;
