@@ -22,9 +22,9 @@
 module sdram (
 	output		  sd_clk, // sd clock
 	output		  sd_cke, // clock enable
-	inout reg [31:0]  sd_data, // 32 bit bidirectional data bus, only 16 used here
+	inout [15:0]      sd_data, // karabas: the 16 bit bus of the MT48LC16M16A2 (was [31:0], 16 used)
 	output reg [12:0] sd_addr, // up to 13 bit multiplexed address bus
-	output     [3:0]  sd_dqm, // two byte masks, only 2 used here
+	output     [1:0]  sd_dqm, // karabas: two byte masks (was [3:0], 2 used)
 	output reg [1:0]  sd_ba, // two banks
 	output		  sd_cs, // a single chip select
 	output		  sd_we, // write enable
@@ -102,7 +102,7 @@ assign sd_we  = sd_cmd[0];
 
 // sd_data[31:16] and sd_dqlm[2:3] are unused with MiSTer SDRAM
 assign sd_data[15:0] = (cs && we) ? din : 16'bzzzz_zzzz_zzzz_zzzz;
-assign sd_dqm = { 2'bzz, (!cs || !we)?2'b00:ds };
+assign sd_dqm = (!cs || !we)?2'b00:ds;  // karabas: 2 bits
 
 always @(posedge clk) begin
    reg csD;   
@@ -131,6 +131,10 @@ always @(posedge clk) begin
 	    sd_addr[10] <= 1'b1;      // precharge all banks
 	 end
 	 
+	 // karabas: two AUTO REFRESH between the PRECHARGE and the LOAD MODE (MT48LC16M16A2 init)
+	 if(init_state == 10 || init_state == 6)
+	    sd_cmd <= CMD_AUTO_REFRESH;
+
 	 if(init_state == 2) begin
 	    sd_cmd <= CMD_LOAD_MODE;
 	    sd_addr <= MODE;
