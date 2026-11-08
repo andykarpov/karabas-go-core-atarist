@@ -18,8 +18,11 @@
  scandoubler doubles its lines, and an output timing of 1024 x 626 at 32 MHz (720 x 576 visible,
  576p50 lines) restarts at that point, so the doubled picture sits in its window.
 
+ Floppies: the F items A: and B: (sdc slots 0 and 1) through img_sdc (the file mounter of the mcu,
+ the sd card interface of MiSTeryNano) to fdc1772; an image mounted read only is write protected.
+
  Soft switches (the index of the item in the osd of core.json, file items included):
-   0 TOS (FL 7)   1 Chipset (ST / Mega ST / STE)   2 Reset
+   0 A: (F 0)   1 B: (F 1)   2 TOS (FL 7)   3 Chipset (ST / Mega ST / STE)   4 Reset
 */
 
 module karabas_minig_top (
@@ -219,7 +222,8 @@ kg_mcu #(
 	.ENABLE_UART(0),
 	.ENABLE_MATRIX(0),
 	.ENABLE_DEBUG(0),
-	.ENABLE_IMG(0),      // the floppies: phase 2
+	.ENABLE_IMG(1),      // the floppies A: and B: (slots 0, 1)
+	.ENABLE_IMG_WP(1),   // read only images: write protected disks
 	.ENABLE_FILE(1),
 	.FILE_CMDS(0),       // the ioctl commands of the FL items
 	.FILE_WR_EACH(1),
@@ -331,15 +335,15 @@ assign SD_CLK = mcu_sck_ibufg;
 
 // ------------------------------------------------------------------ soft switches
 
-wire [3*8-1:0] sw;
-kg_soft_switches #(.N(3)) soft_switches (
+wire [5*8-1:0] sw;
+kg_soft_switches #(.N(5)) soft_switches (
 	.clk(clk_sys),
 	.command(softsw_command),
 	.regs(sw),
 	.upd()
 );
-wire [1:0] sw_chipset = sw[1*8 +: 2];   // 0 ST, 1 Mega ST (Blitter), 2 STE
-wire sw_reset = sw[2*8];
+wire [1:0] sw_chipset = sw[3*8 +: 2];   // 0 ST, 1 Mega ST (Blitter), 2 STE
+wire sw_reset = sw[4*8];
 
 // ------------------------------------------------------------------ TOS in the SRAM
 
@@ -409,6 +413,55 @@ wire ram_ras_n, ram_cash_n, ram_casl_n, ram_we_n, ram_ref;
 wire [23:1] ram_addr;
 wire [15:0] ram_din, ram_dout;
 
+// ------------------------------------------------------------------ floppies
+
+// img_sdc (the file mounter of the mcu) has the sd card interface of MiSTeryNano that fdc1772 of
+// atarist uses: a request bit per drive held until sdc_busy, the sector bytes as strobes with an
+// address while busy; for a write it copies the sector out of the fifo of fdc1772, whose read data
+// come a clock after the address (OUT_LATENCY 2 as the floppy of nanomig)
+wire [7:0] sdc_img_mounted;
+wire [63:0] sdc_img_size;
+wire [31:0] fdc_lba;
+wire [1:0] fdc_rd, fdc_wr;
+wire sdc_busy, sdc_done, sdc_error, sdc_byte_in_strobe;
+wire [2:0] sdc_slot;
+wire [8:0] sdc_byte_addr;
+wire [7:0] sdc_byte_in_data, fdc_out_data;
+wire img_active;
+
+img_sdc #(.OUT_LATENCY(2)) img_sdc (
+	.clk(clk_sys),
+	.reset(areset),
+
+	.img_mounted(img_mounted),
+	.img_size(img_size),
+	.img_data_wr(img_data_wr),
+	.img_data_addr(img_data_addr),
+	.img_data(img_data),
+	.img_result_wr(img_result_wr),
+	.img_result(img_result),
+	.img_sum(img_sum),
+	.img_q_wr(img_q_wr),
+	.img_q_di(img_q_di),
+	.img_q_ack(img_q_ack),
+
+	.sdc_img_mounted(sdc_img_mounted),
+	.sdc_img_size(sdc_img_size),
+	.sdc_rd({ 6'd0, fdc_rd }),
+	.sdc_wr({ 6'd0, fdc_wr }),
+	.sdc_sector(fdc_lba),
+	.sdc_busy(sdc_busy),
+	.sdc_done(sdc_done),
+	.sdc_error(sdc_error),
+	.sdc_slot(sdc_slot),
+	.sdc_byte_in_strobe(sdc_byte_in_strobe),
+	.sdc_byte_addr(sdc_byte_addr),
+	.sdc_byte_in_data(sdc_byte_in_data),
+	.sdc_byte_out_data(fdc_out_data),
+
+	.active(img_active)
+);
+
 atarist st (
 	.clk_32(clk_sys),
 	.porb(porb),
@@ -431,17 +484,17 @@ atarist st (
 	.audio_mix_l(audio_l),
 	.audio_mix_r(audio_r),
 
-	// the floppies: phase 2
-	.sd_lba(),
-	.sd_rd(),
-	.sd_wr(),
-	.sd_ack(1'b0),
-	.sd_buff_addr(9'd0),
-	.sd_dout(8'd0),
-	.sd_din(),
-	.sd_dout_strobe(1'b0),
-	.sd_img_mounted(4'd0),
-	.sd_img_size(64'd0),
+	// the floppies (img_sdc)
+	.sd_lba(fdc_lba),
+	.sd_rd(fdc_rd),
+	.sd_wr(fdc_wr),
+	.sd_ack(sdc_busy),
+	.sd_buff_addr(sdc_byte_addr),
+	.sd_dout(sdc_byte_in_data),
+	.sd_din(fdc_out_data),
+	.sd_dout_strobe(sdc_byte_in_strobe),
+	.sd_img_mounted({ 2'b00, sdc_img_mounted[1:0] }),  // ACSI (2, 3): phase 3
+	.sd_img_size(sdc_img_size),
 
 	// ACSI: phase 3
 	.acsi_rd_req(),
@@ -478,7 +531,7 @@ atarist st (
 	.ste(sw_chipset == 2'd2),
 	.enable_extra_ram(1'b0),
 	.blitter_en(sw_chipset != 2'd0),
-	.floppy_protected(2'b00),
+	.floppy_protected(img_wp[1:0]),  // read only images
 	.cubase_en(1'b0),
 
 	.ram_ras_n(ram_ras_n),
