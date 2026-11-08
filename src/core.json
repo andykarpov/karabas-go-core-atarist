@@ -1,7 +1,7 @@
 {
     "id": "atarist",
     "name": "Atari ST",
-    "build": "26110807",
+    "build": "26110808",
     "visible": true,
     "type": "osd",
     "order": 17,
@@ -11,6 +11,8 @@
     {"filename": "roms/etos192uk.img", "address": 1048576}
     ],
     "boards": {
+        "go": {"bitstream": "karabas_go.bin"},
+        "mini": {"bitstream": "karabas_mini.bin"},
         "minig": {"bitstream": "karabas_minig.bin"}
     },
     "osd": [

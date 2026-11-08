@@ -22,9 +22,11 @@
  img_sdc (the file mounter of the mcu, the sd card interface of MiSTeryNano) to fdc1772 and dma /
  acsi; a floppy image mounted read only is write protected.
 
+ The clock of the ST: the registers of kg_mcu with rtc_mode 3 (st_rtc).
+
  Soft switches (the index of the item in the osd of core.json, file items included):
    0 A: (F 0)   1 B: (F 1)   2 HDD 0 (F 2)   3 HDD 1 (F 3)   4 TOS (FL 7)
-   5 Chipset (ST / Mega ST / STE)   6 Reset
+   5 Chipset (ST / Mega ST / STE)   6 Monitor (Color / Mono)   7 Reset
 */
 
 module karabas_minig_top (

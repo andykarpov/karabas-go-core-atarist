@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An Atari ST / STE core for the Karabas Go, Mini and Mini G boards (Xilinx Spartan-6 XC6SLX25, ISE 14.7, XST): a port of [MiSTeryNano](https://github.com/harbaum/MiSTeryNano) (Till Harbaum's port of gyurco's MiSTery), as `karabas-go-core-nanomig` is a port of NanoMig.
 
-Status: phases 0-3 done on Mini G (EmuTOS desktop, keyboard, sound, OSD, floppies A: / B:, ACSI hard disks, the clock from the firmware, colour and monochrome monitors). Docs, in Russian: `docs/PLAN.md` (research, decisions, phases), `docs/HARDWARE.md` (memory map, board layout), `docs/BACKLOG.md`. Follow the phases; record a changed decision in PLAN.md.
+Status: phases 0-3 done on Mini G, the Go and Mini tops built but not run on a board (EmuTOS desktop, keyboard, sound, OSD, floppies A: / B:, ACSI hard disks, the clock from the firmware, colour and monochrome monitors). Docs, in Russian: `docs/PLAN.md` (research, decisions, phases), `docs/HARDWARE.md` (memory map, board layout), `docs/BACKLOG.md`. Follow the phases; record a changed decision in PLAN.md.
 
 User decisions (2026-11-08): the CPU is **fx68k converted with `sv2v`** (not TG68K); **ST RAM in the SDRAM** (upstream `sdram.v`, 32 MHz), **TOS in the SRAM** (written by the firmware loader). All file work goes through the firmware (OSD, `FL` / `F` items, burst, `img_sdc`): no loader or soft CPU in the core. The core is GPL v3 (`LICENSE`).
 
@@ -36,7 +36,7 @@ The rules of core-rk / core-specialist apply: standard video timing with syncs a
 - XST silently removes a register with neither reset nor initial value whose way out of idle depends on itself (`sd_state` of `fdc1772`: it worked in Verilator, no sector requests on the board). When imported logic works in sim and not on the board, read the registers in the `.syr` (Xst:1710, 2404) first.
 - **Ask the user before every check on the board** (and the HDMI capture), even inside a phase. Ask before a firmware flash.
 - One branch per phase of `docs/PLAN.md`, one PR at its end.
-- Heavy builds: Mini G only until Ф4; map with cost table 2 first.
+- Heavy builds: Mini G only while working on one feature, all boards for a release; map with cost table 2 first.
 
 ## Memory
 
