@@ -3,3 +3,6 @@
 *.kg binary
 *.img binary
 *.odi binary
+*.mem binary
+*.hex -text
+*.ROM binary
