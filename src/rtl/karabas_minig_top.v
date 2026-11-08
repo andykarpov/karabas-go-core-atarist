@@ -394,7 +394,7 @@ end
 wire kb_reset;
 wire tos_loading = rom_active || (file_active && file_slot == 8'd7);
 wire porb = !(areset || !ram_ready || chip_rst != 8'd0);
-wire resb = !(sw_reset || kb_reset || mcu_busy || tos_loading);
+wire resb = !(sw_reset || kb_reset || mcu_busy || tos_loading || !porb);   // porb low also resets the cpu and the peripherals (as upstream)
 
 // ------------------------------------------------------------------ the machine
 
