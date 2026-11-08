@@ -40,9 +40,43 @@ module sim_top (
 	output wire ram_ready,
 	output wire [15:0] audio_l16,
 	// the byte the IKBD sent last to the keyboard ACIA (hierarchical, for the key test)
-	output wire [7:0] kbd_rx
+	output wire [7:0] kbd_rx,
+
+	// the mcu firmware model of the harness on img_sdc (--disk)
+	input wire [7:0] img_mounted,
+	input wire [63:0] img_size,
+	input wire img_data_wr,
+	input wire [8:0] img_data_addr,
+	input wire [7:0] img_data,
+	input wire img_result_wr,
+	input wire [7:0] img_result,
+	input wire [15:0] img_sum,
+	output wire img_q_wr,
+	output wire [23:0] img_q_di,
+	input wire img_q_ack,
+
+	// fdc1772, for the trace of the harness
+	output wire [7:0] fdc_cmd,
+	output wire [7:0] fdc_track,
+	output wire [7:0] fdc_sector,
+	output wire fdc_busy,
+	output wire fdc_irq,
+	output wire fdc_motor,
+	output wire [1:0] fdc_drive,
+	output wire [1:0] fdc_present,
+	output wire [1:0] fdc_rd,
+	output wire [1:0] fdc_wr,
+	output wire [31:0] fdc_lba
 );
 assign kbd_rx = st.kbd_acia.serial_rx_data;
+assign fdc_cmd = st.fdc1772.cmd;
+assign fdc_track = st.fdc1772.track;
+assign fdc_sector = st.fdc1772.sector;
+assign fdc_busy = st.fdc1772.busy;
+assign fdc_irq = st.fdc_irq;
+assign fdc_motor = st.fdc1772.motor_on;
+assign fdc_drive = st.floppy_sel_exclusive;
+assign fdc_present = { st.fdc1772.fdn_present[1], st.fdc1772.fdn_present[0] };
 
 // ------------------------------------------------------------------ SRAM: two 2M x 8 chips
 
@@ -128,8 +162,9 @@ atarist st (
 	.r(st_r), .g(st_g), .b(st_b), .hsync_n(st_hs_n), .vsync_n(st_vs_n), .de(st_de), .blank_n(),
 	.keyboard_matrix_out(kbd_matrix_out), .keyboard_matrix_in(kbd_matrix_in), .joy0(joy0), .joy1(joy1),
 	.audio_mix_l(audio_l), .audio_mix_r(audio_r),
-	.sd_lba(), .sd_rd(), .sd_wr(), .sd_ack(1'b0), .sd_buff_addr(9'd0), .sd_dout(8'd0), .sd_din(),
-	.sd_dout_strobe(1'b0), .sd_img_mounted(4'd0), .sd_img_size(64'd0),
+	.sd_lba(fdc_lba), .sd_rd(fdc_rd), .sd_wr(fdc_wr), .sd_ack(sdc_busy), .sd_buff_addr(sdc_byte_addr),
+	.sd_dout(sdc_byte_in_data), .sd_din(fdc_out_data), .sd_dout_strobe(sdc_byte_in_strobe),
+	.sd_img_mounted({ 2'b00, sdc_img_mounted[1:0] }), .sd_img_size(sdc_img_size),
 	.acsi_rd_req(), .acsi_wr_req(), .acsi_sd_lba(), .acsi_sd_done(1'b0), .acsi_sd_busy(1'b0),
 	.acsi_sd_rd_byte_strobe(1'b0), .acsi_sd_rd_byte(8'd0), .acsi_sd_wr_byte(), .acsi_sd_byte_addr(9'd0),
 	.rtc(12'd0),
@@ -144,6 +179,25 @@ atarist st (
 	.ram_ref(ram_ref), .ram_addr(ram_addr), .ram_data_in(ram_din), .ram_data_out(ram_dout),
 	.rom_n(rom_n), .rom_addr(rom_addr), .rom_data_out(rom_data),
 	.leds()
+);
+
+wire [7:0] sdc_img_mounted;
+wire [63:0] sdc_img_size;
+wire sdc_busy, sdc_byte_in_strobe;
+wire [8:0] sdc_byte_addr;
+wire [7:0] sdc_byte_in_data, fdc_out_data;
+img_sdc #(.OUT_LATENCY(2)) img_sdc (
+	.clk(clk), .reset(!porb_ext),
+	.img_mounted(img_mounted), .img_size(img_size),
+	.img_data_wr(img_data_wr), .img_data_addr(img_data_addr), .img_data(img_data),
+	.img_result_wr(img_result_wr), .img_result(img_result), .img_sum(img_sum),
+	.img_q_wr(img_q_wr), .img_q_di(img_q_di), .img_q_ack(img_q_ack),
+	.sdc_img_mounted(sdc_img_mounted), .sdc_img_size(sdc_img_size),
+	.sdc_rd({ 6'd0, fdc_rd }), .sdc_wr({ 6'd0, fdc_wr }), .sdc_sector(fdc_lba),
+	.sdc_busy(sdc_busy), .sdc_done(), .sdc_error(), .sdc_slot(),
+	.sdc_byte_in_strobe(sdc_byte_in_strobe), .sdc_byte_addr(sdc_byte_addr),
+	.sdc_byte_in_data(sdc_byte_in_data), .sdc_byte_out_data(fdc_out_data),
+	.active()
 );
 
 st_hid hid (

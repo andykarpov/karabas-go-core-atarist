@@ -3,13 +3,15 @@
 //
 //   sim_top [--tos FILE] [--file] [--ste|--megast] [--ms N] [--ppm PREFIX] [--every N]
 //           [--key MS:CODE[:MOD]] [--expect-var NAME=HEX ...] [--expect-frames N] [--expect-mode N]
-//           [--expect-ikbd HEX] (a byte the IKBD sent to the keyboard ACIA)
+//           [--expect-ikbd HEX] (a byte the IKBD sent to the keyboard ACIA) [--disk FILE]
 //
 // The TOS goes in through the loader port of st_sram (one byte per 4 clocks, the ROM loader of the
 // mcu is slower) while resb is low: at 100000 (EmuTOS of core.json) or with --file at 000000 (a TOS
 // file of the FL item). --ppm writes every N-th frame of the doubled output (de window, 720 x 576)
 // as PREFIX_NNNN.ppm. --key holds a USB HID usage code (and modifiers) for 100 ms from MS.
 // The TOS system variables are read from the SDRAM model every frame and printed when they change.
+// --disk mounts FILE in A: (through a model of the mcu firmware on img_sdc) while the machine is in
+// reset, as the firmware does at the start of the core, and prints the commands of fdc1772.
 
 #include <cstdio>
 #include <cstdlib>
@@ -98,10 +100,15 @@ static void capture(void) {
 
 static int last_rx = -1;
 static std::vector<int> rx_bytes;
+static void mcu_clock(void);
+static void fdc_trace(void);
+static bool use_disk = false;
 static void tick(void) {
+	if (use_disk) mcu_clock();
 	tb->clk = 1; tb->eval();
 	tb->clk = 0; tb->eval();
 	sim_ms += TICK_MS;
+	if (use_disk) fdc_trace();
 	capture();
 	if (tb->kbd_rx != last_rx) {
 		if (last_rx >= 0) {
@@ -112,10 +119,67 @@ static void tick(void) {
 	}
 }
 
+// ---------------------------------------------------------------- the mcu firmware on img_sdc
+static std::vector<uint8_t> disk;
+static uint32_t q_lba = 0;
+static int q_op = 0, q_sec = 0, q_wend = 0, q_bank = 0, mcu_reads = 0, mcu_writes = 0;
+static uint16_t q_wsum = 0;
+static uint8_t q_buf[512];
+static int m_state = 0, m_cnt = 0, m_k = 0, ack_d = 0;
+static uint16_t m_sum = 0;
+
+static void mcu_clock(void) {
+	tb->img_q_ack = 0;
+	if (tb->img_q_wr && !ack_d) {
+		tb->img_q_ack = 1;
+		uint32_t di = tb->img_q_di;
+		int cmd = di >> 16, a = (di >> 8) & 0xff, d = di & 0xff;
+		if (cmd == 0x42) q_lba = (q_lba & ~(0xffu << ((a & 3) * 8))) | ((uint32_t)d << ((a & 3) * 8));
+		else if (cmd == 0x43) { q_op = d; q_sec = 1; }
+		else if (cmd == 0x44) {
+			if (a == 0x10) q_wsum = (q_wsum & 0xff00) | d;
+			else if (a == 0x11) { q_wsum = (q_wsum & 0xff) | (d << 8); q_wend = 1; }
+			else q_bank = d;
+		}
+		else if (cmd == 0x45) q_buf[((q_bank & 1) << 8) | a] = d;
+	}
+	ack_d = tb->img_q_ack;
+	tb->img_data_wr = 0; tb->img_result_wr = 0;
+	switch (m_state) {
+	case 0: if (q_sec && (q_op == 1 || q_wend)) { m_state = 1; m_cnt = 32000 * 3; } break;  // 3 ms
+	case 1:
+		if (--m_cnt) break;
+		if (q_op == 1) { mcu_reads++; printf("%9.3f ms mcu read lba %u\n", sim_ms, q_lba); m_state = 2; m_k = 0; m_sum = 0; m_cnt = 0; }
+		else {
+			for (int k = 0; k < 512 && (q_lba + 1) * 512 <= disk.size(); k++) disk[q_lba * 512 + k] = q_buf[k];
+			mcu_writes++; printf("%9.3f ms mcu write lba %u\n", sim_ms, q_lba); m_state = 4;
+		}
+		break;
+	case 2:
+		if (m_cnt++ & 3) break;
+		{ uint8_t b = (q_lba + 1) * 512 <= disk.size() ? disk[q_lba * 512 + m_k] : 0;
+		  tb->img_data_wr = 1; tb->img_data_addr = m_k; tb->img_data = b; m_sum += b;
+		  if (++m_k == 512) m_state = 3; }
+		break;
+	case 3: tb->img_sum = m_sum; m_state = 4; break;
+	case 4: tb->img_result = 1; tb->img_result_wr = 1; q_sec = 0; q_wend = 0; m_state = 0; break;
+	}
+}
+
+// the commands of fdc1772: a line when one starts or ends
+static int fdc_busy_d = 0, fdc_motor_d = 0, fdc_irq_d = 0;
+static void fdc_trace(void) {
+	if (tb->fdc_busy != fdc_busy_d)
+		printf("%9.3f ms fdc %s cmd %02x track %d sector %d drive %d present %d rd %d wr %d\n", sim_ms, tb->fdc_busy ? "busy" : "idle",
+			tb->fdc_cmd, tb->fdc_track, tb->fdc_sector, tb->fdc_drive, tb->fdc_present, tb->fdc_rd, tb->fdc_wr);
+	if (tb->fdc_motor != fdc_motor_d) printf("%9.3f ms fdc motor %d\n", sim_ms, tb->fdc_motor);
+	fdc_busy_d = tb->fdc_busy; fdc_motor_d = tb->fdc_motor; fdc_irq_d = tb->fdc_irq;
+}
+
 struct Key { double ms; int code, mod; };
 
 int main(int argc, char **argv) {
-	const char *tos = "roms/etos192uk.img";
+	const char *tos = "roms/etos192uk.img", *disk_file = nullptr;
 	double run_ms = 100;
 	int file = 0, chipset = 0, expect_frames = -1, expect_mode = -1, expect_ikbd = -1;
 	std::vector<std::pair<std::string, uint32_t>> expects;
@@ -125,6 +189,7 @@ int main(int argc, char **argv) {
 		std::string a = argv[i];
 		if (a == "--tos" && i + 1 < argc) tos = argv[++i];
 		else if (a == "--file") file = 1;
+		else if (a == "--disk" && i + 1 < argc) disk_file = argv[++i];
 		else if (a == "--ste") chipset = 2;
 		else if (a == "--megast") chipset = 1;
 		else if (a == "--ms" && i + 1 < argc) run_ms = atof(argv[++i]);
@@ -169,6 +234,17 @@ int main(int argc, char **argv) {
 		tick();
 		tb->ld_we = 0;
 		tick(); tick(); tick();
+	}
+	if (disk_file) {
+		FILE *d = fopen(disk_file, "rb");
+		if (!d) { perror(disk_file); return 2; }
+		fseek(d, 0, SEEK_END); disk.resize(ftell(d)); rewind(d);
+		if (fread(disk.data(), 1, disk.size(), d) != disk.size()) return 2;
+		fclose(d);
+		use_disk = true;
+		tb->img_size = disk.size(); tb->img_mounted = 1;
+		tick();
+		tb->img_mounted = 0;
 	}
 	for (int i = 0; i < 100; i++) tick();
 	printf("%9.3f ms TOS %s: %zu KB at %06x, SDRAM ready %d\n", sim_ms, tos, n / 1024, base, tb->ram_ready);

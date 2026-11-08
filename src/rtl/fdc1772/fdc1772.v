@@ -798,7 +798,7 @@ localparam SD_WRITE_WAIT = 2;
 localparam SD_READ = 3;
 localparam SD_WRITE = 4;
 
-reg [2:0] sd_state;
+reg [2:0] sd_state = 3'd0; // karabas: an initial value: without one XST takes this self-holding register as a constant and trims the sector requests
 reg       sd_card_write;
 reg       sd_card_read;
 

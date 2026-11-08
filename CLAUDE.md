@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An Atari ST / STE core for the Karabas Go, Mini and Mini G boards (Xilinx Spartan-6 XC6SLX25, ISE 14.7, XST): a port of [MiSTeryNano](https://github.com/harbaum/MiSTeryNano) (Till Harbaum's port of gyurco's MiSTery), as `karabas-go-core-nanomig` is a port of NanoMig.
 
-Status: phase 1 (branch f1-minig): the Mini G top builds; EmuTOS boots in the simulation of the machine with the real SDRAM / SRAM controllers and the video chain. Not tried on the board yet. Docs, in Russian: `docs/PLAN.md` (research, decisions, phases), `docs/HARDWARE.md` (memory map, board layout), `docs/BACKLOG.md`. Follow the phases; record a changed decision in PLAN.md.
+Status: phases 0-2 done on Mini G (EmuTOS desktop, keyboard, sound, OSD, floppies A: / B: with read, write and disk change checked on the board). Docs, in Russian: `docs/PLAN.md` (research, decisions, phases), `docs/HARDWARE.md` (memory map, board layout), `docs/BACKLOG.md`. Follow the phases; record a changed decision in PLAN.md.
 
 User decisions (2026-11-08): the CPU is **fx68k converted with `sv2v`** (not TG68K); **ST RAM in the SDRAM** (upstream `sdram.v`, 32 MHz), **TOS in the SRAM** (written by the firmware loader). All file work goes through the firmware (OSD, `FL` / `F` items, burst, `img_sdc`): no loader or soft CPU in the core. The core is GPL v3 (`LICENSE`).
 
@@ -22,6 +22,7 @@ Templates: `../karabas-go-core-nanomig` (68000 machine, `img_sdc` with a floppy 
 - `src/roms/etos192uk.img`: EmuTOS 1.4 (GPL), the default TOS.
 - `src/sim/run_boot.sh [--ms N] [--ppm sim/build/frame --every N] [--expect-var NAME=HEX] [--expect-frames N]`: verilator model of `atarist` from `rtl/sv2v` (what XST builds), RAM / TOS as C++ arrays on the buses, frames as PPM, TOS system variables printed. 50 ms of ST time take 4 s; EmuTOS shows its banner at 400 ms (35 s). Longer runs (the desktop is several seconds of ST time) only after asking the user.
 - `src/sim/run_top.sh` (same options plus `--file`, `--ste`, `--megast`, `--key MS:CODE[:MOD]`, `--expect-mode N`, `--expect-ikbd HEX`): `sim_top.v` = the machine with sdram.v, st_sram, st_hid and the video chain on SDRAM (CL2) / SRAM models, the TOS written through the loader port; frames of the doubled 720 x 576 output. 420 ms (EmuTOS banner, 4 MB, PAL, a key make / break) take about 35 s. A key pressed while EmuTOS resets the IKBD (about 211 ms) comes as a break code first (the IKBD ROM reports keys held at its reset): press keys later.
+- `src/sim/run_floppy.sh [--tos]` (20 s, `--tos` about 100 s): `fdc1772` of rtl/sv2v + `img_sdc` + a model of the firmware: read, write, seek, both drives, write protect. `run_top.sh --disk FILE`: the whole machine with the image in A: and a trace of the fdc commands (EmuTOS is still on its welcome screen at 4 s of ST time).
 - `upstream/`: the MiSTeryNano top files (`misterynano.sv`, `top.sv` of the Tang Nano 20K and Primer 25K, README), a reference for the wiring, not built.
 - `modules/`: the git submodule [karabas-go-modules](https://github.com/andykarpov/karabas-go-modules). Clone with `--recursive`. A change to a module is made there (branch + PR) and taken here by moving the submodule commit.
 
@@ -31,6 +32,7 @@ The rules of core-rk / core-specialist apply: standard video timing with syncs a
 
 - Mini / Mini G tops drive T3 (`FLASH_CS_N`) = 0: on Mini G2 it is the SDRAM ~CS.
 - ROMs are not ours: only those the user allowed go into the repo and the `.kg` (EmuTOS is free; Atari TOS is not).
+- XST silently removes a register with neither reset nor initial value whose way out of idle depends on itself (`sd_state` of `fdc1772`: it worked in Verilator, no sector requests on the board). When imported logic works in sim and not on the board, read the registers in the `.syr` (Xst:1710, 2404) first.
 - **Ask the user before every check on the board** (and the HDMI capture), even inside a phase. Ask before a firmware flash.
 - One branch per phase of `docs/PLAN.md`, one PR at its end.
 - Heavy builds: Mini G only until Ф4; map with cost table 2 first.

@@ -1,7 +1,7 @@
 {
     "id": "atarist",
     "name": "Atari ST",
-    "build": "26110802",
+    "build": "26110805",
     "visible": true,
     "type": "osd",
     "order": 17,
@@ -13,6 +13,8 @@
         "minig": {"bitstream": "karabas_minig.bin"}
     },
     "osd": [
+    {"type": "F", "name": "Floppy A", "slot": 0, "extensions": ".st", "dir": "/atarist", "hotkey": "Menu+F1"},
+    {"type": "F", "name": "Floppy B", "slot": 1, "extensions": ".st", "dir": "/atarist", "hotkey": "Menu+F2"},
     {"type": "FL", "name": "TOS", "slot": 7, "extensions": ".img,.rom", "dir": "/atarist", "filename": "tos.img", "autoload": 1, "hotkey": "Menu+T"},
     {"type": "S", "name": "Chipset", "options": ["ST", "Mega ST", "STE"], "default": 0, "hotkey": "Menu+C"},
     {"type": "T", "name": "Reset", "hotkey": "F12"}
