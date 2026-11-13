@@ -11,8 +11,8 @@
     {"filename": "roms/etos192uk.img", "address": 1048576}
     ],
     "boards": {
-        "go": {"bitstream": "karabas_go.bin"},
-        "mini": {"bitstream": "karabas_mini.bin"},
+        "go": {"link": 2, "build": "26111335", "bitstream": "karabas_go.bin"},
+        "mini": {"link": 2, "build": "26111335", "bitstream": "karabas_mini.bin"},
         "minig": {"link": 2, "build": "26111312", "bitstream": "karabas_minig.bin"}
     },
     "osd": [
